@@ -15,6 +15,8 @@ const AI_BOT_PROFILE: Profile = {
   is_bot: true
 };
 
+const TOXIC_MARKER = "[[TOXIC_FLAG]]";
+
 export const ChatPage = () => {
   const [friends, setFriends] = useState<Profile[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
@@ -286,19 +288,16 @@ export const ChatPage = () => {
         // If error is related to missing 'is_toxic' column
         if (error && (error.code === 'PGRST204' || error.code === '42703' || error.message?.includes('is_toxic'))) {
             
-            // SECURITY BLOCK: If content is toxic, we CANNOT retry without the flag.
+            // Fallback strategy: Embed toxic flag in content since column is missing
             if (isToxic) {
-                console.error("Blocked toxic message due to missing schema support.");
-                alert("Message Blocked: Content identified as toxic. \n\n(System Note: Database schema update required to log this event properly. Please run db_setup.sql)");
-                // Remove failed message from UI
-                setMessages(prev => prev.filter(m => m.id !== tempId));
-                setIsSending(false);
-                return; 
+                console.warn("Schema missing 'is_toxic'. Using content flag fallback.");
+                delete insertPayload.is_toxic;
+                insertPayload.content = TOXIC_MARKER + messageContent;
+            } else {
+                console.warn("Retrying safe message without 'is_toxic' column...");
+                delete insertPayload.is_toxic;
             }
-
-            // If content is SAFE, retry without the flag so chat keeps working
-            console.warn("Retrying safe message without 'is_toxic' column...");
-            delete insertPayload.is_toxic;
+            
             const retry = await supabase.from('messages').insert(insertPayload).select().single();
             data = retry.data;
             error = retry.error;
@@ -312,7 +311,8 @@ export const ChatPage = () => {
             setMessages(prev => prev.filter(m => m.id !== tempId));
             
             if (error.code === 'PGRST204') {
-                alert("Schema Error: Please run db_setup.sql in Supabase to fix the missing 'is_toxic' column.");
+                // If it still fails, it's a bigger issue
+                alert("Database Error: Message could not be sent. Please check db_setup.sql");
             }
         } else if (data) {
             // Replace optimistic ID with real ID
@@ -323,7 +323,10 @@ export const ChatPage = () => {
 
   // UI Helper: Render Message Bubble
   const renderMessageContent = (content: string, isToxic: boolean | undefined) => {
-    if (isToxic) {
+    // Check for both the DB flag OR the fallback content marker
+    const isToxicContent = isToxic || content.includes(TOXIC_MARKER);
+
+    if (isToxicContent) {
         return (
             <div className="flex items-center gap-2 text-red-300 italic opacity-70">
                 <ShieldAlert className="w-4 h-4" />
