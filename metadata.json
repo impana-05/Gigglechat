@@ -1,0 +1,8 @@
+{
+  "name": "GiggleChat 2025",
+  "description": "A high-tech, futuristic social platform featuring real-time messaging, AI companions, and toxic content analysis. Powered by Gemini and Supabase.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
